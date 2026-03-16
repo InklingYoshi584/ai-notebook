@@ -9,6 +9,7 @@ import {
   Plus,
   Save,
   Sparkles,
+  Trash2,
   Upload,
 } from "lucide-react";
 
@@ -111,6 +112,7 @@ export function Dashboard({ initialData }: DashboardProps) {
   const [previewMode, setPreviewMode] = useState<OutputFormat>("markdown");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [newUnitName, setNewUnitName] = useState("第 1 单元");
   const [aiSubjectId, setAiSubjectId] = useState("");
   const [aiNotebookId, setAiNotebookId] = useState("");
@@ -150,6 +152,16 @@ export function Dashboard({ initialData }: DashboardProps) {
     setPickerOpen(false);
   }
 
+  function syncSelection(nextData: AppData, notebookId?: string, chapterId?: string) {
+    const nextNotebooks = flattenNotebooks(nextData.subjects);
+    const nextNotebook = nextNotebooks.find((item) => item.notebook.id === notebookId) ?? nextNotebooks[0];
+    const nextChapter =
+      nextNotebook?.notebook.chapters.find((item) => item.id === chapterId) ?? nextNotebook?.notebook.chapters[0];
+
+    setSelectedNotebookId(nextNotebook?.notebook.id || "");
+    setSelectedChapterId(nextChapter?.id || "");
+  }
+
   function openAiDialog() {
     setAiSubjectId(selectedSubject?.id || data.subjects[0]?.id || "");
     setAiNotebookId(selectedNotebookItem?.notebook.id || notebooks[0]?.notebook.id || "");
@@ -165,6 +177,34 @@ export function Dashboard({ initialData }: DashboardProps) {
     const result = (await response.json()) as { data: AppData };
     setData(result.data);
     return result.data;
+  }
+
+  function handleDelete(kind: "subject" | "notebook" | "chapter") {
+    let id = "";
+    if (kind === "subject") id = selectedSubject?.id || "";
+    if (kind === "notebook") id = selectedNotebookItem?.notebook.id || "";
+    if (kind === "chapter") id = selectedChapter?.id || "";
+    if (!id) return;
+
+    setFeedback("");
+    startTransition(async () => {
+      const response = await fetch("/api/library", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, id }),
+      });
+      const result = (await response.json()) as { error?: string; data: AppData };
+
+      if (!response.ok || result.error) {
+        setFeedback(result.error || "删除失败");
+        return;
+      }
+
+      setData(result.data);
+      syncSelection(result.data);
+      setDeleteDialogOpen(false);
+      setFeedback("删除成功");
+    });
   }
 
   async function fileToDataUrl(file: File) {
@@ -336,6 +376,13 @@ export function Dashboard({ initialData }: DashboardProps) {
                 className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm disabled:opacity-60"
               >
                 <Save className="h-4 w-4" /> {isSaving ? "保存中..." : "保存当前预览"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteDialogOpen(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700"
+              >
+                <Trash2 className="h-4 w-4" /> 删除
               </button>
               <button
                 type="button"
@@ -589,6 +636,52 @@ export function Dashboard({ initialData }: DashboardProps) {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteDialogOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center" onClick={() => setDeleteDialogOpen(false)}>
+          <div className="w-full max-w-md rounded-3xl bg-white p-4 sm:p-5" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-4">
+              <p className="text-xs tracking-[0.2em] text-slate-500 uppercase">删除内容</p>
+              <h2 className="text-xl font-semibold">选择要删除的对象</h2>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => handleDelete("chapter")}
+                disabled={!selectedChapter || isPending}
+                className="danger-button"
+              >
+                删除当前章节：{selectedChapter?.title || "未选择"}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDelete("notebook")}
+                disabled={!selectedNotebookItem?.notebook || isPending}
+                className="danger-button"
+              >
+                删除当前笔记本：{selectedNotebookItem?.notebook.name || "未选择"}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDelete("subject")}
+                disabled={!selectedSubject || isPending}
+                className="danger-button"
+              >
+                删除当前科目：{selectedSubject?.name || "未选择"}
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setDeleteDialogOpen(false)}
+              className="mt-4 inline-flex w-full items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm"
+            >
+              取消
+            </button>
           </div>
         </div>
       ) : null}
