@@ -20,6 +20,16 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as ProcessBody;
 
+    console.info("[api/process] request received", {
+      subjectId: body.subjectId,
+      notebookId: body.notebookId,
+      chapterId: body.chapterId,
+      sourceName: body.sourceName,
+      outputFormat: body.outputFormat,
+      templatePreset: body.templatePreset,
+      hasFileDataUrl: Boolean(body.fileDataUrl),
+    });
+
     if (
       !body.subjectId ||
       !body.notebookId ||
@@ -36,7 +46,19 @@ export async function POST(request: NextRequest) {
       chapterId: body.chapterId,
     });
 
+    console.info("[api/process] structure resolved", {
+      subjectName: structure.subject.name,
+      notebookName: structure.notebook.name,
+      chapterTitle: structure.chapter.title,
+      currentUnit: structure.chapter.unit,
+    });
+
     const rawOcrMarkdown = await runDeepSeekOcr({ fileDataUrl: body.fileDataUrl });
+    console.info("[api/process] OCR completed", {
+      rawOcrLength: rawOcrMarkdown.length,
+      rawOcrPreview: rawOcrMarkdown.slice(0, 120),
+    });
+
     const transformed = await transformOcrToStudyNote({
       rawOcrMarkdown,
       subjectName: structure.subject.name,
@@ -45,6 +67,12 @@ export async function POST(request: NextRequest) {
       outputFormat: body.outputFormat,
       templatePreset: body.templatePreset || "general",
       templateInstruction: body.templateInstruction || "整理为通用课堂笔记。",
+    });
+
+    console.info("[api/process] transform completed", {
+      transformedTitle: transformed.title,
+      markdownLength: transformed.markdown.length,
+      mindmapLength: transformed.mindmapMermaid.length,
     });
 
     const updated = await updateChapterNote({
@@ -64,6 +92,12 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    console.info("[api/process] chapter updated", {
+      chapterId: updated.chapter.id,
+      chapterTitle: updated.chapter.title,
+      unit: updated.chapter.unit,
+    });
+
     return NextResponse.json({
       subject: updated.subject,
       notebook: updated.notebook,
@@ -71,6 +105,10 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("[api/process] failed", {
+      message,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
