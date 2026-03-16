@@ -14,6 +14,7 @@ export async function PATCH(request: NextRequest, context: Params) {
     const body = (await request.json()) as {
       markdown?: string;
       mindmapMermaid?: string;
+      clearUnit?: boolean;
     };
 
     const updated = await updateChapterNote({
@@ -29,6 +30,10 @@ export async function PATCH(request: NextRequest, context: Params) {
 
         if (typeof body.mindmapMermaid === "string") {
           chapter.note.mindmapMermaid = body.mindmapMermaid;
+        }
+
+        if (body.clearUnit) {
+          chapter.unit = "";
         }
 
         chapter.note.updatedAt = new Date().toISOString();
