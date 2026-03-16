@@ -1,36 +1,224 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CloudNote OCR
 
-## Getting Started
+CloudNote OCR is a web app for turning class notes, whiteboard photos, and document screenshots into structured study material.
 
-First, run the development server:
+It uses SiliconFlow server-side APIs to:
+- run OCR with `deepseek-ai/DeepSeek-OCR`
+- transform OCR drafts into study-friendly Markdown
+- generate mindmap-friendly output for quick review
+
+The current version focuses on a lightweight cloud-style workspace with:
+- subjects
+- notebooks
+- chapters
+- Markdown preview
+- mindmap preview
+- mobile-first preview UX
+
+## Features
+
+- Upload note images or documents and process them through SiliconFlow
+- Organize content by `Subject -> Notebook -> Chapter`
+- Store OCR drafts and transformed notes in local JSON for the MVP
+- Preview notes in two modes:
+  - Markdown
+  - Mindmap
+- Use a mobile dialog to switch notebooks while keeping preview front and center
+- Use a desktop sidebar to browse notebooks and preview content side by side
+
+## Tech Stack
+
+- Next.js 16 App Router
+- React 19
+- TypeScript
+- Tailwind CSS v4
+- SiliconFlow chat completion APIs
+
+## Requirements
+
+- Node.js 20+ recommended
+- npm
+- A valid SiliconFlow API key
+
+## Environment Variables
+
+Create `/.env.local` with:
+
+```env
+SILICONFLOW_API_KEY=your_key_here
+SILICONFLOW_OCR_MODEL=deepseek-ai/DeepSeek-OCR
+SILICONFLOW_TEXT_MODEL=Pro/deepseek-ai/DeepSeek-V3.2
+```
+
+Notes:
+- Do not commit `.env.local`
+- SiliconFlow requests are server-side only
+- If you get `401 Invalid Token`, rotate the key and restart the app
+
+## Install
+
+```bash
+npm install
+```
+
+## Run Locally
+
+Standard local dev:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+LAN/dev on other devices in your network:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run dev:lan
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Then open:
 
-## Learn More
+```text
+http://localhost:3000
+```
 
-To learn more about Next.js, take a look at the following resources:
+Or from another machine on the same network:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```text
+http://<your-local-ip>:3000
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Production Build
 
-## Deploy on Vercel
+Build:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run build
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Run production server:
+
+```bash
+npm run start
+```
+
+Run production server over LAN:
+
+```bash
+npm run start:lan
+```
+
+## Lint
+
+```bash
+npm run lint
+```
+
+## Testing
+
+There is no test runner configured yet.
+
+If tests are added later, the recommended setup is Vitest. Example commands:
+
+```bash
+npx vitest run src/lib/store.test.ts
+npx vitest run src/lib/store.test.ts -t "creates chapter"
+```
+
+## Project Structure
+
+```text
+src/
+  app/
+    api/
+      bootstrap/
+      chapters/[chapterId]/
+      library/
+      process/
+    layout.tsx
+    page.tsx
+  components/
+    dashboard.tsx
+  lib/
+    siliconflow.ts
+    store.ts
+    types.ts
+data/
+  notebooks.json
+```
+
+## API Overview
+
+- `GET /api/bootstrap`
+  - returns current workspace data
+- `POST /api/library`
+  - creates subjects, notebooks, or chapters
+- `PATCH /api/chapters/[chapterId]`
+  - updates saved chapter note content
+- `POST /api/process`
+  - runs OCR and note transformation for the selected chapter
+
+## Storage Model
+
+This MVP stores app data in `data/notebooks.json`.
+
+That includes:
+- subjects
+- notebooks
+- chapters
+- OCR drafts
+- generated Markdown
+- generated mindmap data
+
+This is convenient for local development, but a future production version should move to:
+- a database for metadata
+- object storage for uploads
+
+## UI Model
+
+### Mobile
+
+- Preview-first layout
+- Notebook switching in a dialog
+- Add flow available in the same dialog
+
+### Desktop
+
+- Notebook picker in the left sidebar
+- Preview area on the right
+- Two preview buttons to switch modes
+
+## Common Issues
+
+### SiliconFlow 401
+
+If OCR fails with a 401 error:
+- verify `SILICONFLOW_API_KEY`
+- rotate the key if it was exposed
+- restart the Next.js server after updating `.env.local`
+
+### LAN access not working
+
+- make sure you use `npm run dev:lan` or `npm run start:lan`
+- confirm both devices are on the same network
+- allow Node.js or port `3000` through Windows Firewall if needed
+
+## Git Workflow
+
+This repo uses a branch-first workflow for features and fixes.
+
+- create a non-default branch for new work
+- use conventional commits
+- verify with lint/build before merge
+
+Example:
+
+```bash
+git checkout -b feat/add-export-flow
+git commit -m "feat: add export flow"
+```
+
+## Agent Guidance
+
+Agent-specific repository instructions live in `AGENTS.md`.
+
+If you are using an agentic coding tool, read `AGENTS.md` first.
