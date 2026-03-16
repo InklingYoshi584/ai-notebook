@@ -1,7 +1,6 @@
 ---
 description: Designs and implements safe server routes, data mutation flows, and SiliconFlow integrations for the app.
 mode: subagent
-model: GPT-5.4-2026-03-05
 temperature: 0.1
 tools:
   write: true
