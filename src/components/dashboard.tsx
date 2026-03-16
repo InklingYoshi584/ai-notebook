@@ -113,6 +113,7 @@ export function Dashboard({ initialData }: DashboardProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<"subject" | "notebook" | "chapter" | "unit">("chapter");
   const [newUnitName, setNewUnitName] = useState("第 1 单元");
   const [aiSubjectId, setAiSubjectId] = useState("");
   const [aiNotebookId, setAiNotebookId] = useState("");
@@ -204,6 +205,30 @@ export function Dashboard({ initialData }: DashboardProps) {
       syncSelection(result.data);
       setDeleteDialogOpen(false);
       setFeedback("删除成功");
+    });
+  }
+
+  function handleDeleteUnit() {
+    if (!selectedChapter?.id) return;
+
+    setFeedback("");
+    startTransition(async () => {
+      const response = await fetch(`/api/chapters/${selectedChapter.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clearUnit: true }),
+      });
+      const result = (await response.json()) as { error?: string; chapter?: Chapter };
+
+      if (!response.ok || result.error) {
+        setFeedback(result.error || "删除单元失败");
+        return;
+      }
+
+      const nextData = await refreshData();
+      syncSelection(nextData, selectedNotebookItem?.notebook.id, selectedChapter.id);
+      setDeleteDialogOpen(false);
+      setFeedback("当前章节的单元已删除。");
     });
   }
 
@@ -361,7 +386,7 @@ export function Dashboard({ initialData }: DashboardProps) {
               </h1>
             </div>
 
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:gap-3">
               <button
                 type="button"
                 onClick={openAiDialog}
@@ -395,7 +420,7 @@ export function Dashboard({ initialData }: DashboardProps) {
           </div>
 
           <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="inline-flex w-full rounded-2xl border border-[var(--line)] bg-white p-1 sm:w-auto">
+            <div className="inline-flex w-full rounded-2xl border border-[var(--line)] bg-white p-1 sm:w-auto sm:gap-1">
               {(["markdown", "mindmap"] as OutputFormat[]).map((mode) => (
                 <button
                   key={mode}
@@ -648,31 +673,78 @@ export function Dashboard({ initialData }: DashboardProps) {
               <h2 className="text-xl font-semibold">选择要删除的对象</h2>
             </div>
 
+            <div className="mb-4 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget("chapter")}
+                className={`rounded-2xl px-3 py-2 text-sm ${deleteTarget === "chapter" ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-600"}`}
+              >
+                章节
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteTarget("unit")}
+                className={`rounded-2xl px-3 py-2 text-sm ${deleteTarget === "unit" ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-600"}`}
+              >
+                单元
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteTarget("notebook")}
+                className={`rounded-2xl px-3 py-2 text-sm ${deleteTarget === "notebook" ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-600"}`}
+              >
+                笔记本
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteTarget("subject")}
+                className={`rounded-2xl px-3 py-2 text-sm ${deleteTarget === "subject" ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-600"}`}
+              >
+                科目
+              </button>
+            </div>
+
             <div className="space-y-3">
-              <button
-                type="button"
-                onClick={() => handleDelete("chapter")}
-                disabled={!selectedChapter || isPending}
-                className="danger-button"
-              >
-                删除当前章节：{selectedChapter?.title || "未选择"}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDelete("notebook")}
-                disabled={!selectedNotebookItem?.notebook || isPending}
-                className="danger-button"
-              >
-                删除当前笔记本：{selectedNotebookItem?.notebook.name || "未选择"}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDelete("subject")}
-                disabled={!selectedSubject || isPending}
-                className="danger-button"
-              >
-                删除当前科目：{selectedSubject?.name || "未选择"}
-              </button>
+              {deleteTarget === "chapter" ? (
+                <button
+                  type="button"
+                  onClick={() => handleDelete("chapter")}
+                  disabled={!selectedChapter || isPending}
+                  className="danger-button"
+                >
+                  删除当前章节：{selectedChapter?.title || "未选择"}
+                </button>
+              ) : null}
+              {deleteTarget === "unit" ? (
+                <button
+                  type="button"
+                  onClick={handleDeleteUnit}
+                  disabled={!selectedChapter || !selectedChapter.unit || isPending}
+                  className="danger-button"
+                >
+                  删除当前单元：{selectedChapter?.unit || "未设置单元"}
+                </button>
+              ) : null}
+              {deleteTarget === "notebook" ? (
+                <button
+                  type="button"
+                  onClick={() => handleDelete("notebook")}
+                  disabled={!selectedNotebookItem?.notebook || isPending}
+                  className="danger-button"
+                >
+                  删除当前笔记本：{selectedNotebookItem?.notebook.name || "未选择"}
+                </button>
+              ) : null}
+              {deleteTarget === "subject" ? (
+                <button
+                  type="button"
+                  onClick={() => handleDelete("subject")}
+                  disabled={!selectedSubject || isPending}
+                  className="danger-button"
+                >
+                  删除当前科目：{selectedSubject?.name || "未选择"}
+                </button>
+              ) : null}
             </div>
 
             <button
