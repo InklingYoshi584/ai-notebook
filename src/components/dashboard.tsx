@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   BookOpenText,
   ChevronRight,
@@ -23,10 +25,13 @@ import type {
   Subject,
   TemplatePresetId,
 } from "@/lib/types";
+import type { Components } from "react-markdown";
 
 type DashboardProps = {
   initialData: AppData;
 };
+
+type ContentViewMode = "preview" | "edit";
 
 type NotebookItem = {
   subject: Subject;
@@ -72,6 +77,44 @@ const templatePresets: TemplatePreset[] = [
   },
 ];
 
+const markdownComponents: Components = {
+  h1: ({ children }) => <h1 className="mb-4 text-3xl font-bold tracking-tight text-slate-900">{children}</h1>,
+  h2: ({ children }) => <h2 className="mb-3 mt-6 text-2xl font-semibold text-slate-900">{children}</h2>,
+  h3: ({ children }) => <h3 className="mb-2 mt-5 text-xl font-semibold text-slate-900">{children}</h3>,
+  h4: ({ children }) => <h4 className="mb-2 mt-4 text-lg font-semibold text-slate-800">{children}</h4>,
+  p: ({ children }) => <p className="mb-4 leading-7 text-slate-700">{children}</p>,
+  ul: ({ children }) => <ul className="mb-4 list-disc space-y-2 pl-6 text-slate-700">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-4 list-decimal space-y-2 pl-6 text-slate-700">{children}</ol>,
+  li: ({ children }) => <li className="pl-1 leading-7 marker:text-slate-500">{children}</li>,
+  hr: () => <hr className="my-6 border-0 border-t border-slate-300" />,
+  blockquote: ({ children }) => (
+    <blockquote className="mb-4 border-l-4 border-teal-200 bg-teal-50/60 px-4 py-3 italic text-slate-700">
+      {children}
+    </blockquote>
+  ),
+  code: ({ children, className }) =>
+    className ? (
+      <code className="block overflow-x-auto rounded-2xl bg-slate-900 p-4 text-sm leading-7 text-slate-100">
+        {children}
+      </code>
+    ) : (
+      <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[0.9em] text-sky-800">{children}</code>
+    ),
+  pre: ({ children }) => <div className="mb-4">{children}</div>,
+  strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
+  em: ({ children }) => <em className="italic text-slate-700">{children}</em>,
+  table: ({ children }) => (
+    <div className="mb-4 overflow-x-auto">
+      <table className="min-w-full border-collapse overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-slate-50">{children}</thead>,
+  th: ({ children }) => <th className="border-b border-slate-200 px-4 py-3 text-left text-sm font-semibold text-slate-800">{children}</th>,
+  td: ({ children }) => <td className="border-b border-slate-100 px-4 py-3 text-sm text-slate-700">{children}</td>,
+};
+
 function flattenNotebooks(subjects: Subject[]) {
   const items: NotebookItem[] = [];
   for (const subject of subjects) {
@@ -82,34 +125,52 @@ function flattenNotebooks(subjects: Subject[]) {
   return items;
 }
 
-function toTreeLines(node?: MindmapNode) {
-  if (!node) return [] as string[];
-
-  const lines: string[] = [];
-  const walk = (item: MindmapNode, depth: number) => {
-    lines.push(`${"  ".repeat(depth)}- ${item.title}`);
-    item.children?.forEach((child) => walk(child, depth + 1));
-  };
-  walk(node, 0);
-  return lines;
-}
-
 function MindmapPreview({ node }: { node?: MindmapNode }) {
   if (!node) {
     return <p className="text-sm text-slate-500">这个章节还没有思维导图内容。</p>;
   }
 
-  const lines = toTreeLines(node);
   return (
-    <pre className="w-full max-w-full overflow-auto rounded-2xl border border-[var(--line)] bg-white/80 p-4 text-sm leading-7 text-slate-700">
-      {lines.join("\n")}
-    </pre>
+    <div className="overflow-auto rounded-2xl border border-[var(--line)] bg-[radial-gradient(circle_at_top,rgba(12,74,110,0.06),transparent_38%),rgba(255,255,255,0.92)] p-5">
+      <div className="flex w-full justify-center py-2">
+        <TreeNode node={node} depth={0} />
+      </div>
+    </div>
+  );
+}
+
+function TreeNode({ node, depth }: { node: MindmapNode; depth: number }) {
+  return (
+    <div className="flex min-w-0 max-w-full flex-col items-center gap-3 px-1 sm:gap-4 sm:px-3">
+      <div
+        className={`rounded-full border px-4 py-2 text-sm font-medium shadow-sm ${
+          depth === 0
+            ? "border-teal-500 bg-teal-600 text-white"
+            : depth === 1
+              ? "border-amber-200 bg-amber-50 text-amber-900"
+              : "border-slate-200 bg-white text-slate-700"
+        }`}
+      >
+        <span className="block max-w-[70vw] truncate sm:max-w-[220px]">{node.title}</span>
+      </div>
+      {node.children?.length ? (
+        <div className="flex w-full max-w-full flex-col items-center gap-3">
+          <div className="h-5 w-px bg-slate-300" />
+          <div className="flex w-full max-w-full flex-wrap justify-center gap-2 border-t border-dashed border-slate-300 pt-3 sm:gap-3 sm:pt-4">
+            {node.children.map((child, index) => (
+              <TreeNode key={`${child.title}-${index}`} node={child} depth={depth + 1} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 export function Dashboard({ initialData }: DashboardProps) {
   const [data, setData] = useState(initialData);
   const [previewMode, setPreviewMode] = useState<OutputFormat>("markdown");
+  const [contentViewMode, setContentViewMode] = useState<ContentViewMode>("preview");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [subjectDialogOpen, setSubjectDialogOpen] = useState(false);
@@ -603,10 +664,10 @@ export function Dashboard({ initialData }: DashboardProps) {
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={!selectedChapter?.note || isSaving}
+                disabled={!selectedChapter?.note || isSaving || contentViewMode !== "edit"}
                 className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm disabled:opacity-60"
               >
-                <Save className="h-4 w-4" /> {isSaving ? "保存中..." : "保存当前预览"}
+                <Save className="h-4 w-4" /> {isSaving ? "保存中..." : "保存编辑内容"}
               </button>
               <button
                 type="button"
@@ -641,8 +702,24 @@ export function Dashboard({ initialData }: DashboardProps) {
               ))}
             </div>
 
-            <div className="inline-flex items-center gap-2 text-xs text-slate-500">
-              <Network className="h-4 w-4" /> 预览模式
+            <div className="flex items-center gap-2">
+              <div className="inline-flex rounded-2xl border border-[var(--line)] bg-white p-1">
+                {(["preview", "edit"] as ContentViewMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setContentViewMode(mode)}
+                    className={`rounded-xl px-3 py-2 text-xs transition ${
+                      contentViewMode === mode ? "bg-slate-900 text-white" : "text-slate-600"
+                    }`}
+                  >
+                    {mode === "preview" ? "预览" : "编辑"}
+                  </button>
+                ))}
+              </div>
+              <div className="inline-flex items-center gap-2 text-xs text-slate-500">
+                <Network className="h-4 w-4" /> {contentViewMode === "preview" ? "预览模式" : "编辑模式"}
+              </div>
             </div>
           </div>
 
@@ -655,7 +732,7 @@ export function Dashboard({ initialData }: DashboardProps) {
 
           <div className="h-[calc(100vh-240px)] max-h-[760px] min-h-[360px] w-full max-w-full overflow-auto rounded-2xl border border-[var(--line)] bg-white/70 p-4">
             {selectedChapter ? (
-              <ChapterPreview chapter={selectedChapter} mode={previewMode} />
+              <ChapterPreview chapter={selectedChapter} mode={previewMode} viewMode={contentViewMode} />
             ) : (
               <p className="text-sm text-slate-500">当前笔记本还没有章节内容。</p>
             )}
@@ -1081,12 +1158,24 @@ export function Dashboard({ initialData }: DashboardProps) {
   );
 }
 
-function ChapterPreview({ chapter, mode }: { chapter: Chapter; mode: OutputFormat }) {
+function ChapterPreview({
+  chapter,
+  mode,
+  viewMode,
+}: {
+  chapter: Chapter;
+  mode: OutputFormat;
+  viewMode: ContentViewMode;
+}) {
   if (!chapter.note) {
     return <p className="text-sm text-slate-500">这个章节还没有生成内容。</p>;
   }
 
   if (mode === "mindmap") {
+    if (viewMode === "preview") {
+      return <MindmapPreview node={chapter.note.mindmapTree} />;
+    }
+
     return (
       <div className="space-y-4">
         <MindmapPreview node={chapter.note.mindmapTree} />
@@ -1096,6 +1185,16 @@ function ChapterPreview({ chapter, mode }: { chapter: Chapter; mode: OutputForma
           key={`${chapter.id}-mindmap`}
           className="field min-h-[220px] resize-y bg-[#112026] text-emerald-50"
         />
+      </div>
+    );
+  }
+
+  if (viewMode === "preview") {
+    return (
+      <div className="max-w-none text-sm">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          {chapter.note.markdown}
+        </ReactMarkdown>
       </div>
     );
   }
