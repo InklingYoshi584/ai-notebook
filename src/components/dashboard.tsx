@@ -526,7 +526,7 @@ export function Dashboard({ initialData }: DashboardProps) {
                             onClick={() => handleCreateChapter(subject.id, notebook.id)}
                             className="inline-flex rounded-full border border-[var(--line)] bg-white px-3 py-2 text-xs"
                           >
-                            确定
+                            ✓
                           </button>
                           <button
                             type="button"
@@ -536,7 +536,7 @@ export function Dashboard({ initialData }: DashboardProps) {
                             }}
                             className="inline-flex rounded-full border border-[var(--line)] bg-white px-3 py-2 text-xs"
                           >
-                            取消
+                            x
                           </button>
                         </div>
                       ) : null}
@@ -732,7 +732,7 @@ export function Dashboard({ initialData }: DashboardProps) {
                               onClick={() => handleCreateChapter(subject.id, notebook.id)}
                               className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
                             >
-                              确定
+                              ✓
                             </button>
                           </div>
                         ) : null}
