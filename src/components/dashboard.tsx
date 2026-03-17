@@ -112,8 +112,15 @@ export function Dashboard({ initialData }: DashboardProps) {
   const [previewMode, setPreviewMode] = useState<OutputFormat>("markdown");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [subjectDialogOpen, setSubjectDialogOpen] = useState(false);
+  const [notebookDialogOpen, setNotebookDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<"subject" | "notebook" | "chapter" | "unit">("chapter");
+  const [newSubjectName, setNewSubjectName] = useState("");
+  const [newNotebookName, setNewNotebookName] = useState("");
+  const [newChapterName, setNewChapterName] = useState("");
+  const [chapterCreateNotebookId, setChapterCreateNotebookId] = useState("");
+  const [notebookCreateSubjectId, setNotebookCreateSubjectId] = useState("");
   const [newUnitName, setNewUnitName] = useState("第 1 单元");
   const [aiSubjectId, setAiSubjectId] = useState("");
   const [aiNotebookId, setAiNotebookId] = useState("");
@@ -159,6 +166,22 @@ export function Dashboard({ initialData }: DashboardProps) {
     setPickerOpen(false);
   }
 
+  function openSubjectDialog() {
+    setNewSubjectName("");
+    setSubjectDialogOpen(true);
+  }
+
+  function openNotebookDialog(subjectId: string) {
+    setNotebookCreateSubjectId(subjectId);
+    setNewNotebookName("");
+    setNotebookDialogOpen(true);
+  }
+
+  function openChapterInline(notebookId: string) {
+    setChapterCreateNotebookId(notebookId);
+    setNewChapterName("");
+  }
+
   function syncSelection(nextData: AppData, notebookId?: string, chapterId?: string) {
     const nextNotebooks = flattenNotebooks(nextData.subjects);
     const nextNotebook = nextNotebooks.find((item) => item.notebook.id === notebookId) ?? nextNotebooks[0];
@@ -184,6 +207,95 @@ export function Dashboard({ initialData }: DashboardProps) {
     const result = (await response.json()) as { data: AppData };
     setData(result.data);
     return result.data;
+  }
+
+  function handleCreateSubject() {
+    if (!newSubjectName.trim()) return;
+
+    setFeedback("");
+    startTransition(async () => {
+      const response = await fetch("/api/library", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "subject", name: newSubjectName.trim() }),
+      });
+      const result = (await response.json()) as { error?: string; data: AppData; subject?: Subject };
+
+      if (!response.ok || result.error) {
+        setFeedback(result.error || "创建科目失败");
+        return;
+      }
+
+      setData(result.data);
+      setSelectedNotebookId(result.subject?.notebooks[0]?.id || "");
+      setSelectedChapterId(result.subject?.notebooks[0]?.chapters[0]?.id || "");
+      setSubjectDialogOpen(false);
+      setFeedback("科目已创建。");
+    });
+  }
+
+  function handleCreateNotebook() {
+    if (!notebookCreateSubjectId || !newNotebookName.trim()) return;
+
+    setFeedback("");
+    startTransition(async () => {
+      const response = await fetch("/api/library", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "notebook",
+          subjectId: notebookCreateSubjectId,
+          name: newNotebookName.trim(),
+        }),
+      });
+      const result = (await response.json()) as { error?: string; data: AppData; notebook?: Notebook };
+
+      if (!response.ok || result.error) {
+        setFeedback(result.error || "创建笔记本失败");
+        return;
+      }
+
+      setData(result.data);
+      syncSelection(result.data, result.notebook?.id);
+      setNotebookDialogOpen(false);
+      setFeedback("笔记本已创建。");
+    });
+  }
+
+  function handleCreateChapter(subjectId: string, notebookId: string) {
+    if (!subjectId || !notebookId || !newChapterName.trim()) return;
+
+    setFeedback("");
+    startTransition(async () => {
+      const response = await fetch("/api/library", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "chapter",
+          subjectId,
+          notebookId,
+          title: newChapterName.trim(),
+          unit: "未分单元",
+        }),
+      });
+      const result = (await response.json()) as {
+        error?: string;
+        data: AppData;
+        notebook?: Notebook;
+        chapter?: Chapter;
+      };
+
+      if (!response.ok || result.error) {
+        setFeedback(result.error || "创建章节失败");
+        return;
+      }
+
+      setData(result.data);
+      syncSelection(result.data, result.notebook?.id, result.chapter?.id);
+      setChapterCreateNotebookId("");
+      setNewChapterName("");
+      setFeedback("章节已创建。");
+    });
   }
 
   function handleDelete(kind: "subject" | "notebook" | "chapter") {
@@ -349,30 +461,85 @@ export function Dashboard({ initialData }: DashboardProps) {
     <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden px-3 py-4 sm:px-5 sm:py-6 lg:px-8">
       <main className="mx-auto grid w-full max-w-7xl min-w-0 gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="hidden rounded-3xl border border-[var(--line)] bg-[var(--panel)] p-4 lg:block">
-          <div className="mb-4 flex items-center gap-2">
-            <BookOpenText className="h-4 w-4 text-[var(--accent)]" />
-            <h2 className="text-lg font-semibold">选择笔记本</h2>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <BookOpenText className="h-4 w-4 text-[var(--accent)]" />
+              <h2 className="text-lg font-semibold">选择笔记本</h2>
+            </div>
+            <button
+              type="button"
+              onClick={openSubjectDialog}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] bg-white text-slate-700"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
           </div>
 
           <div className="space-y-3">
             {data.subjects.map((subject) => (
               <div key={subject.id} className="rounded-2xl border border-[var(--line)] bg-white/75 p-2">
-                <p className="px-2 py-1 text-xs tracking-[0.2em] text-slate-500 uppercase">{subject.name}</p>
+                <div className="flex items-center justify-between gap-2 px-2 py-1">
+                  <p className="text-xs tracking-[0.2em] text-slate-500 uppercase">{subject.name}</p>
+                  <button
+                    type="button"
+                    onClick={() => openNotebookDialog(subject.id)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--line)] bg-white text-slate-600"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
                 <div className="space-y-1">
                   {subject.notebooks.map((notebook) => (
                     <div key={notebook.id} className="space-y-1">
-                      <button
-                        type="button"
-                        onClick={() => selectNotebook(notebook.id)}
-                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${
-                          selectedNotebookItem?.notebook.id === notebook.id
-                            ? "bg-teal-50 text-teal-900"
-                            : "hover:bg-slate-50"
-                        }`}
-                      >
-                        <span className="truncate">{notebook.name}</span>
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => selectNotebook(notebook.id)}
+                          className={`flex min-w-0 flex-1 items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${
+                            selectedNotebookItem?.notebook.id === notebook.id
+                              ? "bg-teal-50 text-teal-900"
+                              : "hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="truncate">{notebook.name}</span>
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openChapterInline(notebook.id)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] bg-white text-slate-600"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                      {chapterCreateNotebookId === notebook.id ? (
+                        <div className="flex items-center gap-2 pl-3">
+                          <input
+                            value={newChapterName}
+                            onChange={(event) => setNewChapterName(event.target.value)}
+                            className="field py-2 text-sm"
+                            placeholder="新建章节"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleCreateChapter(subject.id, notebook.id)}
+                            className="inline-flex rounded-full border border-[var(--line)] bg-white px-3 py-2 text-xs"
+                          >
+                            确定
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setChapterCreateNotebookId("");
+                              setNewChapterName("");
+                            }}
+                            className="inline-flex rounded-full border border-[var(--line)] bg-white px-3 py-2 text-xs"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      ) : null}
                       {selectedNotebookItem?.notebook.id === notebook.id && notebook.chapters.length > 0 ? (
                         <div className="space-y-1 pl-3">
                           {notebook.chapters.map((chapter) => (
@@ -504,24 +671,71 @@ export function Dashboard({ initialData }: DashboardProps) {
             className="max-h-[82vh] w-full overflow-auto rounded-3xl bg-white p-4"
             onClick={(event) => event.stopPropagation()}
           >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-lg font-semibold">切换笔记本</h3>
+              <button
+                type="button"
+                onClick={openSubjectDialog}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+
             <div className="space-y-3">
               {data.subjects.map((subject) => (
                 <div key={subject.id} className="rounded-2xl border border-slate-200 p-2">
-                  <p className="px-2 py-1 text-xs tracking-[0.2em] text-slate-500 uppercase">{subject.name}</p>
+                  <div className="flex items-center justify-between gap-2 px-2 py-1">
+                    <p className="text-xs tracking-[0.2em] text-slate-500 uppercase">{subject.name}</p>
+                    <button
+                      type="button"
+                      onClick={() => openNotebookDialog(subject.id)}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   <div className="space-y-1">
                     {subject.notebooks.map((notebook) => (
                       <div key={notebook.id} className="space-y-1">
-                        <button
-                          type="button"
-                          onClick={() => selectNotebook(notebook.id)}
-                          className={`w-full rounded-xl px-3 py-2 text-left text-sm ${
-                            selectedNotebookItem?.notebook.id === notebook.id
-                              ? "bg-teal-50 text-teal-900"
-                              : "hover:bg-slate-50"
-                          }`}
-                        >
-                          {notebook.name}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => selectNotebook(notebook.id)}
+                            className={`min-w-0 flex-1 rounded-xl px-3 py-2 text-left text-sm ${
+                              selectedNotebookItem?.notebook.id === notebook.id
+                                ? "bg-teal-50 text-teal-900"
+                                : "hover:bg-slate-50"
+                            }`}
+                          >
+                            {notebook.name}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openChapterInline(notebook.id)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
+                        {chapterCreateNotebookId === notebook.id ? (
+                          <div className="flex items-center gap-2 pl-3">
+                            <input
+                              value={newChapterName}
+                              onChange={(event) => setNewChapterName(event.target.value)}
+                              className="field py-2 text-sm"
+                              placeholder="新建章节"
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleCreateChapter(subject.id, notebook.id)}
+                              className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+                            >
+                              确定
+                            </button>
+                          </div>
+                        ) : null}
                         {selectedNotebookItem?.notebook.id === notebook.id && notebook.chapters.length > 0 ? (
                           <div className="space-y-1 pl-3">
                             {notebook.chapters.map((chapter) => (
@@ -808,6 +1022,58 @@ export function Dashboard({ initialData }: DashboardProps) {
             >
               取消
             </button>
+          </div>
+        </div>
+      ) : null}
+
+      {subjectDialogOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center" onClick={() => setSubjectDialogOpen(false)}>
+          <div className="w-full max-w-md rounded-3xl bg-white p-4 sm:p-5" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-4">
+              <p className="text-xs tracking-[0.2em] text-slate-500 uppercase">新增科目</p>
+              <h2 className="text-xl font-semibold">创建一个新科目</h2>
+            </div>
+            <input
+              value={newSubjectName}
+              onChange={(event) => setNewSubjectName(event.target.value)}
+              className="field"
+              placeholder="新科目名称"
+              autoFocus
+            />
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={handleCreateSubject} className="action-button flex-1" disabled={isPending}>
+                创建
+              </button>
+              <button type="button" onClick={() => setSubjectDialogOpen(false)} className="inline-flex flex-1 items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm">
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {notebookDialogOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center" onClick={() => setNotebookDialogOpen(false)}>
+          <div className="w-full max-w-md rounded-3xl bg-white p-4 sm:p-5" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-4">
+              <p className="text-xs tracking-[0.2em] text-slate-500 uppercase">新增笔记本</p>
+              <h2 className="text-xl font-semibold">创建一个新笔记本</h2>
+            </div>
+            <input
+              value={newNotebookName}
+              onChange={(event) => setNewNotebookName(event.target.value)}
+              className="field"
+              placeholder="新笔记本名称"
+              autoFocus
+            />
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={handleCreateNotebook} className="action-button flex-1" disabled={isPending}>
+                创建
+              </button>
+              <button type="button" onClick={() => setNotebookDialogOpen(false)} className="inline-flex flex-1 items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm">
+                取消
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
