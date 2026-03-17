@@ -153,6 +153,12 @@ export function Dashboard({ initialData }: DashboardProps) {
     setPickerOpen(false);
   }
 
+  function selectChapter(notebookId: string, chapterId: string) {
+    setSelectedNotebookId(notebookId);
+    setSelectedChapterId(chapterId);
+    setPickerOpen(false);
+  }
+
   function syncSelection(nextData: AppData, notebookId?: string, chapterId?: string) {
     const nextNotebooks = flattenNotebooks(nextData.subjects);
     const nextNotebook = nextNotebooks.find((item) => item.notebook.id === notebookId) ?? nextNotebooks[0];
@@ -354,19 +360,52 @@ export function Dashboard({ initialData }: DashboardProps) {
                 <p className="px-2 py-1 text-xs tracking-[0.2em] text-slate-500 uppercase">{subject.name}</p>
                 <div className="space-y-1">
                   {subject.notebooks.map((notebook) => (
-                    <button
-                      key={notebook.id}
-                      type="button"
-                      onClick={() => selectNotebook(notebook.id)}
-                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${
-                        selectedNotebookItem?.notebook.id === notebook.id
-                          ? "bg-teal-50 text-teal-900"
-                          : "hover:bg-slate-50"
-                      }`}
-                    >
-                      <span className="truncate">{notebook.name}</span>
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
+                    <div key={notebook.id} className="space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => selectNotebook(notebook.id)}
+                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${
+                          selectedNotebookItem?.notebook.id === notebook.id
+                            ? "bg-teal-50 text-teal-900"
+                            : "hover:bg-slate-50"
+                        }`}
+                      >
+                        <span className="truncate">{notebook.name}</span>
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                      {selectedNotebookItem?.notebook.id === notebook.id && notebook.chapters.length > 0 ? (
+                        <div className="space-y-1 pl-3">
+                          {notebook.chapters.map((chapter) => (
+                            <div key={chapter.id} className="space-y-1">
+                              <button
+                                type="button"
+                                onClick={() => selectChapter(notebook.id, chapter.id)}
+                                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs ${
+                                  selectedChapter?.id === chapter.id
+                                    ? "bg-amber-50 text-amber-900"
+                                    : "text-slate-600 hover:bg-slate-50"
+                                }`}
+                              >
+                                <span className="truncate">{chapter.title}</span>
+                                <span className="text-[11px] text-slate-400">章节</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => selectChapter(notebook.id, chapter.id)}
+                                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[11px] ${
+                                  selectedChapter?.id === chapter.id
+                                    ? "bg-orange-50 text-orange-900"
+                                    : "text-slate-500 hover:bg-slate-50"
+                                }`}
+                              >
+                                <span className="truncate">{chapter.unit || "未分单元"}</span>
+                                <span className="text-[10px] text-slate-400">单元</span>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -440,26 +479,10 @@ export function Dashboard({ initialData }: DashboardProps) {
             </div>
           </div>
 
-          {chapters.length > 0 ? (
-            <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-              <div>
-                <label className="mb-2 block text-sm text-slate-600">章节</label>
-                <select
-                  value={selectedChapter?.id || ""}
-                  onChange={(event) => setSelectedChapterId(event.target.value)}
-                  className="field"
-                >
-                  {chapters.map((chapter) => (
-                    <option key={chapter.id} value={chapter.id}>
-                      {chapter.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-2 block text-sm text-slate-600">单元</label>
-                <input value={selectedChapter?.unit || ""} readOnly className="field" />
-              </div>
+          {selectedChapter ? (
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+              <span className="rounded-full border border-[var(--line)] bg-white px-3 py-1">章节：{selectedChapter.title}</span>
+              <span className="rounded-full border border-[var(--line)] bg-white px-3 py-1">单元：{selectedChapter.unit || "未分单元"}</span>
             </div>
           ) : null}
 
@@ -487,18 +510,49 @@ export function Dashboard({ initialData }: DashboardProps) {
                   <p className="px-2 py-1 text-xs tracking-[0.2em] text-slate-500 uppercase">{subject.name}</p>
                   <div className="space-y-1">
                     {subject.notebooks.map((notebook) => (
-                      <button
-                        key={notebook.id}
-                        type="button"
-                        onClick={() => selectNotebook(notebook.id)}
-                        className={`w-full rounded-xl px-3 py-2 text-left text-sm ${
-                          selectedNotebookItem?.notebook.id === notebook.id
-                            ? "bg-teal-50 text-teal-900"
-                            : "hover:bg-slate-50"
-                        }`}
-                      >
-                        {notebook.name}
-                      </button>
+                      <div key={notebook.id} className="space-y-1">
+                        <button
+                          type="button"
+                          onClick={() => selectNotebook(notebook.id)}
+                          className={`w-full rounded-xl px-3 py-2 text-left text-sm ${
+                            selectedNotebookItem?.notebook.id === notebook.id
+                              ? "bg-teal-50 text-teal-900"
+                              : "hover:bg-slate-50"
+                          }`}
+                        >
+                          {notebook.name}
+                        </button>
+                        {selectedNotebookItem?.notebook.id === notebook.id && notebook.chapters.length > 0 ? (
+                          <div className="space-y-1 pl-3">
+                            {notebook.chapters.map((chapter) => (
+                              <div key={chapter.id} className="space-y-1">
+                                <button
+                                  type="button"
+                                  onClick={() => selectChapter(notebook.id, chapter.id)}
+                                  className={`w-full rounded-lg px-3 py-2 text-left text-xs ${
+                                    selectedChapter?.id === chapter.id
+                                      ? "bg-amber-50 text-amber-900"
+                                      : "text-slate-600 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {chapter.title}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => selectChapter(notebook.id, chapter.id)}
+                                  className={`w-full rounded-lg px-3 py-2 text-left text-[11px] ${
+                                    selectedChapter?.id === chapter.id
+                                      ? "bg-orange-50 text-orange-900"
+                                      : "text-slate-500 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {chapter.unit || "未分单元"}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                     ))}
                   </div>
                 </div>
