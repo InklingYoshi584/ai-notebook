@@ -1,10 +1,32 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
-import type { AppData, Chapter, Notebook, Subject } from "@/lib/types";
+import type { AppData, Chapter, Notebook, NoteRecord, Subject } from "@/lib/types";
 
 const dataDir = path.join(process.cwd(), "data");
-const dataFile = path.join(dataDir, "notebooks.json");
+const legacyDataFile = path.join(dataDir, "notebooks.json");
+const storeDir = path.join(dataDir, "library");
+const storeMetaFile = path.join(storeDir, "meta.json");
+const subjectsDir = path.join(storeDir, "subjects");
+
+type StoreMeta = {
+  updatedAt: string;
+};
+
+type SubjectMeta = Omit<Subject, "notebooks">;
+
+type NotebookMeta = Omit<Notebook, "chapters">;
+
+type ChapterMeta = Omit<Chapter, "note">;
+
+type NoteMeta = Pick<NoteRecord, "sourceName" | "updatedAt">;
 
 const now = () => new Date().toISOString();
 
@@ -86,28 +108,6 @@ const seedData = (): AppData => {
   };
 };
 
-async function ensureStore() {
-  await mkdir(dataDir, { recursive: true });
-
-  try {
-    await readFile(dataFile, "utf-8");
-  } catch {
-    await writeFile(dataFile, JSON.stringify(seedData(), null, 2), "utf-8");
-  }
-}
-
-export async function readStore(): Promise<AppData> {
-  await ensureStore();
-  const raw = await readFile(dataFile, "utf-8");
-  return JSON.parse(raw) as AppData;
-}
-
-export async function writeStore(data: AppData) {
-  data.updatedAt = now();
-  await ensureStore();
-  await writeFile(dataFile, JSON.stringify(data, null, 2), "utf-8");
-}
-
 const slugify = (value: string) =>
   value
     .trim()
@@ -126,6 +126,268 @@ const subjectThemes = [
 
 function pickTheme(index: number) {
   return subjectThemes[index % subjectThemes.length];
+}
+
+async function pathExists(targetPath: string) {
+  try {
+    await stat(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readJsonFile<T>(filePath: string): Promise<T> {
+  const raw = await readFile(filePath, "utf-8");
+  return JSON.parse(raw) as T;
+}
+
+async function writeJsonFile(filePath: string, value: unknown) {
+  await writeFile(filePath, JSON.stringify(value, null, 2), "utf-8");
+}
+
+function getSubjectDir(subjectId: string) {
+  return path.join(subjectsDir, subjectId);
+}
+
+function getSubjectMetaFile(subjectId: string) {
+  return path.join(getSubjectDir(subjectId), "meta.json");
+}
+
+function getNotebooksDir(subjectId: string) {
+  return path.join(getSubjectDir(subjectId), "notebooks");
+}
+
+function getNotebookDir(subjectId: string, notebookId: string) {
+  return path.join(getNotebooksDir(subjectId), notebookId);
+}
+
+function getNotebookMetaFile(subjectId: string, notebookId: string) {
+  return path.join(getNotebookDir(subjectId, notebookId), "meta.json");
+}
+
+function getChaptersDir(subjectId: string, notebookId: string) {
+  return path.join(getNotebookDir(subjectId, notebookId), "chapters");
+}
+
+function getChapterDir(subjectId: string, notebookId: string, chapterId: string) {
+  return path.join(getChaptersDir(subjectId, notebookId), chapterId);
+}
+
+function getChapterMetaFile(subjectId: string, notebookId: string, chapterId: string) {
+  return path.join(getChapterDir(subjectId, notebookId, chapterId), "meta.json");
+}
+
+function getChapterNoteDir(subjectId: string, notebookId: string, chapterId: string) {
+  return path.join(getChapterDir(subjectId, notebookId, chapterId), "note");
+}
+
+function getChapterNoteMetaFile(subjectId: string, notebookId: string, chapterId: string) {
+  return path.join(getChapterNoteDir(subjectId, notebookId, chapterId), "meta.json");
+}
+
+async function listDirectories(rootDir: string) {
+  if (!(await pathExists(rootDir))) {
+    return [] as string[];
+  }
+
+  const entries = await readdir(rootDir, { withFileTypes: true });
+  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+}
+
+function sortByUpdatedAtDesc<T extends { updatedAt: string }>(items: T[]) {
+  return [...items].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+async function readNoteRecord(
+  subjectId: string,
+  notebookId: string,
+  chapterId: string,
+): Promise<NoteRecord | undefined> {
+  const noteDir = getChapterNoteDir(subjectId, notebookId, chapterId);
+  if (!(await pathExists(noteDir))) {
+    return undefined;
+  }
+
+  const noteMeta = await readJsonFile<NoteMeta>(
+    getChapterNoteMetaFile(subjectId, notebookId, chapterId),
+  );
+  const rawOcrMarkdown = await readFile(path.join(noteDir, "ocr.md"), "utf-8");
+  const markdown = await readFile(path.join(noteDir, "markdown.md"), "utf-8");
+  const mindmapMermaid = await readFile(path.join(noteDir, "mindmap.mmd"), "utf-8");
+  const mindmapTree = await readJsonFile<NoteRecord["mindmapTree"]>(
+    path.join(noteDir, "mindmap-tree.json"),
+  );
+  const sourceDataUrlPath = path.join(noteDir, "source-data-url.txt");
+  const sourceDataUrl = (await pathExists(sourceDataUrlPath))
+    ? await readFile(sourceDataUrlPath, "utf-8")
+    : undefined;
+
+  return {
+    ...noteMeta,
+    rawOcrMarkdown,
+    markdown,
+    mindmapMermaid,
+    mindmapTree,
+    sourceDataUrl,
+  };
+}
+
+async function readStructuredStore(): Promise<AppData> {
+  const meta = await readJsonFile<StoreMeta>(storeMetaFile);
+  const subjectIds = await listDirectories(subjectsDir);
+  const subjects = await Promise.all(
+    subjectIds.map(async (subjectId) => {
+      const subjectMeta = await readJsonFile<SubjectMeta>(getSubjectMetaFile(subjectId));
+      const notebookIds = await listDirectories(getNotebooksDir(subjectId));
+      const notebooks = await Promise.all(
+        notebookIds.map(async (notebookId) => {
+          const notebookMeta = await readJsonFile<NotebookMeta>(
+            getNotebookMetaFile(subjectId, notebookId),
+          );
+          const chapterIds = await listDirectories(getChaptersDir(subjectId, notebookId));
+          const chapters = await Promise.all(
+            chapterIds.map(async (chapterId) => {
+              const chapterMeta = await readJsonFile<ChapterMeta>(
+                getChapterMetaFile(subjectId, notebookId, chapterId),
+              );
+              const note = await readNoteRecord(subjectId, notebookId, chapterId);
+
+              return {
+                ...chapterMeta,
+                note,
+              } satisfies Chapter;
+            }),
+          );
+
+          return {
+            ...notebookMeta,
+            chapters: sortByUpdatedAtDesc(chapters),
+          } satisfies Notebook;
+        }),
+      );
+
+      return {
+        ...subjectMeta,
+        notebooks: sortByUpdatedAtDesc(notebooks),
+      } satisfies Subject;
+    }),
+  );
+
+  return {
+    updatedAt: meta.updatedAt,
+    subjects: sortByUpdatedAtDesc(subjects),
+  };
+}
+
+async function writeNoteRecord(
+  subjectId: string,
+  notebookId: string,
+  chapterId: string,
+  note: NoteRecord,
+) {
+  const noteDir = getChapterNoteDir(subjectId, notebookId, chapterId);
+  await mkdir(noteDir, { recursive: true });
+  await writeJsonFile(getChapterNoteMetaFile(subjectId, notebookId, chapterId), {
+    sourceName: note.sourceName,
+    updatedAt: note.updatedAt,
+  } satisfies NoteMeta);
+  await writeFile(path.join(noteDir, "ocr.md"), note.rawOcrMarkdown, "utf-8");
+  await writeFile(path.join(noteDir, "markdown.md"), note.markdown, "utf-8");
+  await writeFile(path.join(noteDir, "mindmap.mmd"), note.mindmapMermaid, "utf-8");
+  await writeJsonFile(path.join(noteDir, "mindmap-tree.json"), note.mindmapTree);
+
+  const sourceDataUrlPath = path.join(noteDir, "source-data-url.txt");
+  if (note.sourceDataUrl) {
+    await writeFile(sourceDataUrlPath, note.sourceDataUrl, "utf-8");
+  }
+}
+
+async function persistStore(data: AppData) {
+  await mkdir(dataDir, { recursive: true });
+  await rm(storeDir, { recursive: true, force: true });
+  await mkdir(subjectsDir, { recursive: true });
+  await writeJsonFile(storeMetaFile, { updatedAt: data.updatedAt } satisfies StoreMeta);
+
+  for (const subject of data.subjects) {
+    const subjectDir = getSubjectDir(subject.id);
+    await mkdir(subjectDir, { recursive: true });
+    await writeJsonFile(getSubjectMetaFile(subject.id), {
+      id: subject.id,
+      name: subject.name,
+      theme: subject.theme,
+      description: subject.description,
+      createdAt: subject.createdAt,
+      updatedAt: subject.updatedAt,
+    } satisfies SubjectMeta);
+
+    await mkdir(getNotebooksDir(subject.id), { recursive: true });
+
+    for (const notebook of subject.notebooks) {
+      const notebookDir = getNotebookDir(subject.id, notebook.id);
+      await mkdir(notebookDir, { recursive: true });
+      await writeJsonFile(getNotebookMetaFile(subject.id, notebook.id), {
+        id: notebook.id,
+        name: notebook.name,
+        createdAt: notebook.createdAt,
+        updatedAt: notebook.updatedAt,
+      } satisfies NotebookMeta);
+
+      await mkdir(getChaptersDir(subject.id, notebook.id), { recursive: true });
+
+      for (const chapter of notebook.chapters) {
+        const chapterDir = getChapterDir(subject.id, notebook.id, chapter.id);
+        await mkdir(chapterDir, { recursive: true });
+        await writeJsonFile(getChapterMetaFile(subject.id, notebook.id, chapter.id), {
+          id: chapter.id,
+          title: chapter.title,
+          unit: chapter.unit,
+          createdAt: chapter.createdAt,
+          updatedAt: chapter.updatedAt,
+        } satisfies ChapterMeta);
+
+        if (chapter.note) {
+          await writeNoteRecord(subject.id, notebook.id, chapter.id, chapter.note);
+        }
+      }
+    }
+  }
+}
+
+async function migrateLegacyStore() {
+  if (!(await pathExists(legacyDataFile))) {
+    return false;
+  }
+
+  const legacyData = await readJsonFile<AppData>(legacyDataFile);
+  await persistStore(legacyData);
+  return true;
+}
+
+async function ensureStore() {
+  await mkdir(dataDir, { recursive: true });
+
+  if (await pathExists(storeMetaFile)) {
+    return;
+  }
+
+  const migrated = await migrateLegacyStore();
+  if (migrated) {
+    return;
+  }
+
+  await persistStore(seedData());
+}
+
+export async function readStore(): Promise<AppData> {
+  await ensureStore();
+  return readStructuredStore();
+}
+
+export async function writeStore(data: AppData) {
+  data.updatedAt = now();
+  await ensureStore();
+  await persistStore(data);
 }
 
 export async function createSubject(input: { name: string; description?: string }) {
