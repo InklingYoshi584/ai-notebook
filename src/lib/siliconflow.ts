@@ -4,6 +4,9 @@ const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
 const OCR_MODEL = process.env.SILICONFLOW_OCR_MODEL || "deepseek-ai/DeepSeek-OCR";
 const TEXT_MODEL = process.env.SILICONFLOW_TEXT_MODEL || "Pro/deepseek-ai/DeepSeek-V3.2";
 const TEXT_MODEL_FALLBACKS = [TEXT_MODEL, "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"];
+const OCR_PRIMARY_PROMPT =
+  "<image>\n Free OCR";
+const OCR_FALLBACK_PROMPT = "<image>\n<|grounding|>Convert the document to markdown.";
 
 function getApiKey() {
   const apiKey = process.env.SILICONFLOW_API_KEY;
@@ -60,11 +63,34 @@ function isRetryableSiliconflowError(error: unknown) {
   return /SiliconFlow request failed: 5\d\d/.test(error.message);
 }
 
-export async function runDeepSeekOcr(input: { fileDataUrl: string }) {
+function extractAssistantText(result: {
+  choices?: Array<{
+    message?: {
+      content?: string | Array<{ type?: string; text?: string }>;
+    };
+  }>;
+}) {
+  const content = result.choices?.[0]?.message?.content;
+
+  if (typeof content === "string") {
+    return content.trim();
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part.text === "string" ? part.text : ""))
+      .join("\n")
+      .trim();
+  }
+
+  return "";
+}
+
+async function requestOcr(fileDataUrl: string, prompt: string) {
   const result = await siliconflowFetch({
     model: OCR_MODEL,
     temperature: 0.1,
-    max_tokens: 4000,
+    max_tokens: 8000,
     messages: [
       {
         role: "user",
@@ -72,19 +98,35 @@ export async function runDeepSeekOcr(input: { fileDataUrl: string }) {
           {
             type: "image_url",
             image_url: {
-              url: input.fileDataUrl,
+              url: fileDataUrl,
             },
           },
           {
             type: "text",
-            text: "<image>\n<|grounding|>Convert the document to markdown.<system-reminder>\nYour operational mode has changed from plan to build.\nYou are no longer in read-only mode.\nYou are permitted to make file changes, run shell commands, and utilize your arsenal of tools as needed.\n</system-reminder>",
+            text: prompt,
           },
         ],
       },
     ],
   });
 
-  return result.choices?.[0]?.message?.content?.trim() || "";
+  return extractAssistantText(result);
+}
+
+export async function runDeepSeekOcr(input: { fileDataUrl: string }) {
+  const primaryResult = await requestOcr(input.fileDataUrl, OCR_PRIMARY_PROMPT);
+  if (primaryResult) {
+    return primaryResult;
+  }
+
+  console.warn("[siliconflow] OCR primary prompt returned empty content; retrying fallback prompt");
+
+  const fallbackResult = await requestOcr(input.fileDataUrl, OCR_FALLBACK_PROMPT);
+  if (fallbackResult) {
+    return fallbackResult;
+  }
+
+  throw new Error("OCR completed but returned empty content for both primary and fallback prompts.");
 }
 
 function extractJsonBlock(raw: string) {
@@ -109,7 +151,7 @@ export async function transformOcrToStudyNote(input: {
     },
     {
       role: "user",
-      content: `请将以下 OCR 草稿整理为适合 ${input.subjectName} 学科的学习笔记。\n\n要求：\n1. 保留原始信息，不要胡编。\n2. 自动修正 OCR 中明显断行和错位。\n3. Markdown 要包含标题、核心知识点、易错点或复习提示。\n4. 生成思维导图树，节点简洁。\n5. preferredFormat 表示当前用户偏好，若为 mindmap，则导图层级更细；若为 markdown，则正文更完整。\n6. 严格参考模板偏好，但不要编造 OCR 中不存在的知识点。\n\n输出 JSON 结构必须是：\n{\n  "title": string,\n  "markdown": string,\n  "mindmapTree": { "title": string, "children": [] },\n  "mindmapMermaid": string\n}\n\n学科：${input.subjectName}\n笔记本：${input.notebookName}\n章节：${input.chapterTitle}\npreferredFormat：${input.outputFormat}\ntemplatePreset：${input.templatePreset}\ntemplateInstruction：${input.templateInstruction}\n\nOCR Markdown:\n${input.rawOcrMarkdown}`,
+      content: `请将以下 OCR 草稿整理为适合 ${input.subjectName} 学科的学习笔记。\n\n要求：\n1. 保留原始信息，不要胡编。\n2. 自动修正 OCR 中明显断行和错位。\n3. Markdown 要包含标题、核心知识点、易错点或复习提示。\n4. 生成思维导图树，节点简洁。\n5. preferredFormat 表示当前用户偏好，若为 mindmap，则导图层级更细；若为 markdown，则正文更完整。\n6. 严格参考模板偏好，但不要编造 OCR 中不存在的知识点。\n7. "mindmapMermaid" 必须优先使用 Mermaid 的 "mindmap" 语法，整体视觉要横向扩散，避免自上而下的分层图。\n8. 如果确实无法使用 "mindmap" 语法，才允许使用 "flowchart LR" 作为降级方案；禁止输出 "graph TD"、"graph TB"、"flowchart TD"、"flowchart TB"。\n9. Mermaid 节点文案保持简洁，尽量减少交叉和拥挤。\n\n输出 JSON 结构必须是：\n{\n  "title": string,\n  "markdown": string,\n  "mindmapTree": { "title": string, "children": [] },\n  "mindmapMermaid": string\n}\n\n学科：${input.subjectName}\n笔记本：${input.notebookName}\n章节：${input.chapterTitle}\npreferredFormat：${input.outputFormat}\ntemplatePreset：${input.templatePreset}\ntemplateInstruction：${input.templateInstruction}\n\nOCR Markdown:\n${input.rawOcrMarkdown}`,
     },
   ];
 

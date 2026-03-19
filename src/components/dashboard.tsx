@@ -15,10 +15,10 @@ import {
   Upload,
 } from "lucide-react";
 
+import { MermaidPreview } from "@/components/mermaid-preview";
 import type {
   AppData,
   Chapter,
-  MindmapNode,
   Notebook,
   OutputFormat,
   ProcessResponse,
@@ -123,48 +123,6 @@ function flattenNotebooks(subjects: Subject[]) {
     }
   }
   return items;
-}
-
-function MindmapPreview({ node }: { node?: MindmapNode }) {
-  if (!node) {
-    return <p className="text-sm text-slate-500">这个章节还没有思维导图内容。</p>;
-  }
-
-  return (
-    <div className="overflow-auto rounded-2xl border border-[var(--line)] bg-[radial-gradient(circle_at_top,rgba(12,74,110,0.06),transparent_38%),rgba(255,255,255,0.92)] p-5">
-      <div className="flex w-full justify-center py-2">
-        <TreeNode node={node} depth={0} />
-      </div>
-    </div>
-  );
-}
-
-function TreeNode({ node, depth }: { node: MindmapNode; depth: number }) {
-  return (
-    <div className="flex min-w-0 max-w-full flex-col items-center gap-3 px-1 sm:gap-4 sm:px-3">
-      <div
-        className={`rounded-full border px-4 py-2 text-sm font-medium shadow-sm ${
-          depth === 0
-            ? "border-teal-500 bg-teal-600 text-white"
-            : depth === 1
-              ? "border-amber-200 bg-amber-50 text-amber-900"
-              : "border-slate-200 bg-white text-slate-700"
-        }`}
-      >
-        <span className="block max-w-[70vw] truncate sm:max-w-[220px]">{node.title}</span>
-      </div>
-      {node.children?.length ? (
-        <div className="flex w-full max-w-full flex-col items-center gap-3">
-          <div className="h-5 w-px bg-slate-300" />
-          <div className="flex w-full max-w-full flex-wrap justify-center gap-2 border-t border-dashed border-slate-300 pt-3 sm:gap-3 sm:pt-4">
-            {node.children.map((child, index) => (
-              <TreeNode key={`${child.title}-${index}`} node={child} depth={depth + 1} />
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 export function Dashboard({ initialData }: DashboardProps) {
@@ -1173,12 +1131,12 @@ function ChapterPreview({
 
   if (mode === "mindmap") {
     if (viewMode === "preview") {
-      return <MindmapPreview node={chapter.note.mindmapTree} />;
+      return <MermaidPreview chart={chapter.note.mindmapMermaid} />;
     }
 
     return (
       <div className="space-y-4">
-        <MindmapPreview node={chapter.note.mindmapTree} />
+        <MermaidPreview chart={chapter.note.mindmapMermaid} />
         <textarea
           id="mindmap-editor"
           defaultValue={chapter.note.mindmapMermaid}

@@ -140,3 +140,84 @@ select {
 ::selection {
   background: rgba(15, 118, 110, 0.18);
 }
+
+.mermaid-diagram svg {
+  display: block;
+  width: max-content;
+  height: auto;
+  min-width: min(100%, 720px);
+  max-width: none;
+  overflow: visible;
+}
+
+.mermaid-diagram .label,
+.mermaid-diagram foreignObject,
+.mermaid-diagram span {
+  font-family: Georgia, "Times New Roman", serif !important;
+}
+
+.xmind-like-diagram .node rect,
+.xmind-like-diagram .node circle,
+.xmind-like-diagram .node ellipse,
+.xmind-like-diagram .node polygon,
+.xmind-like-diagram .node path {
+  rx: 22px;
+  ry: 22px;
+  stroke-width: 1.5px;
+  filter: drop-shadow(0 10px 18px rgba(73, 52, 32, 0.12));
+}
+
+.xmind-like-diagram .node .label,
+.xmind-like-diagram .node .label text,
+.xmind-like-diagram .nodeLabel {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.xmind-like-diagram .edgePath .path,
+.xmind-like-diagram .flowchart-link,
+.xmind-like-diagram .edge-pattern-solid,
+.xmind-like-diagram .edge-pattern-dashed {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2px;
+  opacity: 0.78;
+}
+
+.xmind-like-diagram .marker {
+  fill: #95aea8 !important;
+  stroke: #95aea8 !important;
+}
+
+.xmind-like-diagram svg > g > g.node:nth-of-type(2n) rect,
+.xmind-like-diagram svg > g > g.node:nth-of-type(2n) path,
+.xmind-like-diagram svg > g > g.node:nth-of-type(2n) polygon,
+.xmind-like-diagram svg > g > g.node:nth-of-type(2n) circle {
+  fill: #fff4de;
+  stroke: #dfbf95;
+}
+
+.xmind-like-diagram svg > g > g.node:nth-of-type(3n) rect,
+.xmind-like-diagram svg > g > g.node:nth-of-type(3n) path,
+.xmind-like-diagram svg > g > g.node:nth-of-type(3n) polygon,
+.xmind-like-diagram svg > g > g.node:nth-of-type(3n) circle {
+  fill: #eef7f3;
+  stroke: #bad7ce;
+}
+
+.xmind-like-diagram svg > g > g.node:first-of-type rect,
+.xmind-like-diagram svg > g > g.node:first-of-type path,
+.xmind-like-diagram svg > g > g.node:first-of-type polygon,
+.xmind-like-diagram svg > g > g.node:first-of-type circle {
+  fill: #0f766e;
+  stroke: #0b5b56;
+  filter: drop-shadow(0 16px 28px rgba(15, 118, 110, 0.22));
+}
+
+.xmind-like-diagram svg > g > g.node:first-of-type .label,
+.xmind-like-diagram svg > g > g.node:first-of-type text,
+.xmind-like-diagram svg > g > g.node:first-of-type span {
+  fill: #fffdf7 !important;
+  color: #fffdf7 !important;
+}
