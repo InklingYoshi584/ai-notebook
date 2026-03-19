@@ -3,8 +3,8 @@
 CloudNote OCR is a web app for turning class notes, whiteboard photos, and document screenshots into structured study material.
 
 It uses SiliconFlow server-side APIs to:
-- run OCR with `deepseek-ai/DeepSeek-OCR`
-- transform OCR drafts into study-friendly Markdown
+- read note images directly with `Qwen/Qwen3.5-397B-A17B`
+- generate structured study Markdown in one pass
 - generate mindmap-friendly output for quick review
 
 The current version focuses on a lightweight cloud-style workspace with:
@@ -17,7 +17,7 @@ The current version focuses on a lightweight cloud-style workspace with:
 
 ## Features
 
-- Upload note images or documents and process them through SiliconFlow
+- Upload note images or documents and process them through a direct multimodal SiliconFlow pipeline
 - Organize content by `Subject -> Notebook -> Chapter`
 - Store OCR drafts and transformed notes in local JSON for the MVP
 - Preview notes in two modes:
@@ -46,7 +46,7 @@ Create `/.env.local` with:
 
 ```env
 SILICONFLOW_API_KEY=your_key_here
-SILICONFLOW_OCR_MODEL=deepseek-ai/DeepSeek-OCR
+SILICONFLOW_OCR_MODEL=Qwen/Qwen3.5-397B-A17B
 SILICONFLOW_TEXT_MODEL=Pro/deepseek-ai/DeepSeek-V3.2
 ```
 

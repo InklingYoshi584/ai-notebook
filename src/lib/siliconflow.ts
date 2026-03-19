@@ -1,12 +1,9 @@
 import type { MindmapNode, OutputFormat, TemplatePresetId } from "@/lib/types";
 
 const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
-const OCR_MODEL = process.env.SILICONFLOW_OCR_MODEL || "deepseek-ai/DeepSeek-OCR";
-const TEXT_MODEL = process.env.SILICONFLOW_TEXT_MODEL || "Pro/deepseek-ai/DeepSeek-V3.2";
-const TEXT_MODEL_FALLBACKS = [TEXT_MODEL, "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"];
-const OCR_PRIMARY_PROMPT =
-  "<image>\n Free OCR";
-const OCR_FALLBACK_PROMPT = "<image>\n<|grounding|>Convert the document to markdown.";
+const OCR_MODEL = process.env.SILICONFLOW_OCR_MODEL || "Qwen/Qwen3.5-397B-A17B";
+const VISION_SYSTEM_PROMPT =
+  "你是一个课堂笔记整理助手。你要直接读取图片内容并整理成高质量学习笔记，同时输出 Markdown、原始提取稿和思维导图。只输出 JSON，不要附加解释。";
 
 function getApiKey() {
   const apiKey = process.env.SILICONFLOW_API_KEY;
@@ -86,56 +83,94 @@ function extractAssistantText(result: {
   return "";
 }
 
-async function requestOcr(fileDataUrl: string, prompt: string) {
-  const result = await siliconflowFetch({
-    model: OCR_MODEL,
-    temperature: 0.1,
-    max_tokens: 8000,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image_url",
-            image_url: {
-              url: fileDataUrl,
-            },
-          },
-          {
-            type: "text",
-            text: prompt,
-          },
-        ],
-      },
-    ],
-  });
-
-  return extractAssistantText(result);
-}
-
-export async function runDeepSeekOcr(input: { fileDataUrl: string }) {
-  const primaryResult = await requestOcr(input.fileDataUrl, OCR_PRIMARY_PROMPT);
-  if (primaryResult) {
-    return primaryResult;
-  }
-
-  console.warn("[siliconflow] OCR primary prompt returned empty content; retrying fallback prompt");
-
-  const fallbackResult = await requestOcr(input.fileDataUrl, OCR_FALLBACK_PROMPT);
-  if (fallbackResult) {
-    return fallbackResult;
-  }
-
-  throw new Error("OCR completed but returned empty content for both primary and fallback prompts.");
-}
-
 function extractJsonBlock(raw: string) {
-  const fenced = raw.match(/```json\s*([\s\S]*?)```/i);
-  return fenced?.[1]?.trim() || raw.trim();
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]?.trim()) {
+    return fenced[1].trim();
+  }
+
+  const firstBrace = raw.indexOf("{");
+  const lastBrace = raw.lastIndexOf("}");
+
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    return raw.slice(firstBrace, lastBrace + 1).trim();
+  }
+
+  return raw.trim();
 }
 
-export async function transformOcrToStudyNote(input: {
-  rawOcrMarkdown: string;
+function parseStudyNotePayload(raw: string) {
+  const jsonText = extractJsonBlock(raw);
+
+  try {
+    return JSON.parse(jsonText) as {
+      title: string;
+      rawOcrMarkdown?: string;
+      markdown: string;
+      mindmapTree: MindmapNode;
+      mindmapMermaid: string;
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown JSON parse error";
+    console.error("[siliconflow] failed to parse multimodal JSON", {
+      message,
+      preview: jsonText.slice(0, 500),
+    });
+    throw new Error("多模态模型返回了非 JSON 结果，请重试一次。若持续失败，需要继续收紧输出格式。");
+  }
+}
+
+function sanitizeMermaidText(value: string) {
+  return value
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_, expr: string) => expr)
+    .replace(/\$([^$]+)\$/g, (_, expr: string) => expr)
+    .replace(/\\\((.*?)\\\)/g, (_, expr: string) => expr)
+    .replace(/\\\[(.*?)\\\]/g, (_, expr: string) => expr)
+    .replace(/\\(?:frac|sqrt|text|mathrm|mathbf|left|right|cdot|times|div|leq|geq|neq|approx|angle|triangle|parallel|perp|circ|sin|cos|tan|alpha|beta|gamma|theta|pi|lambda|mu|Delta|sum|int|pm|mp)\b/g, "")
+    .replace(/[{}]/g, "")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sanitizeMindmapMermaid(chart: string) {
+  return chart
+    .split("\n")
+    .map((line) => {
+      if (!line.trim() || /^\s*(mindmap|flowchart\s+LR|%%\{)/i.test(line)) {
+        return line;
+      }
+
+      return sanitizeMermaidText(line);
+    })
+    .join("\n");
+}
+
+function buildMindmapMermaidFromTree(tree: MindmapNode) {
+  const lines = ["mindmap"];
+
+  function visit(node: MindmapNode, depth: number) {
+    const indent = "  ".repeat(depth);
+    const title = sanitizeMermaidText(node.title || "未命名节点") || "未命名节点";
+
+    if (depth === 1) {
+      lines.push(`${indent}root((${title}))`);
+    } else {
+      lines.push(`${indent}${title}`);
+    }
+
+    for (const child of node.children || []) {
+      visit(child, depth + 1);
+    }
+  }
+
+  visit(tree, 1);
+
+  return lines.join("\n");
+}
+
+export async function generateStudyNoteFromImage(input: {
+  fileDataUrl: string;
   subjectName: string;
   notebookName: string;
   chapterTitle: string;
@@ -146,53 +181,63 @@ export async function transformOcrToStudyNote(input: {
   const messages = [
     {
       role: "system",
-      content:
-        "你是一个课堂笔记整理助手。你会把 OCR 草稿整理成高质量的学习笔记，同时输出 Markdown 和思维导图树。只输出 JSON，不要附加解释。",
+      content: VISION_SYSTEM_PROMPT,
     },
     {
       role: "user",
-      content: `请将以下 OCR 草稿整理为适合 ${input.subjectName} 学科的学习笔记。\n\n要求：\n1. 保留原始信息，不要胡编。\n2. 自动修正 OCR 中明显断行和错位。\n3. Markdown 要包含标题、核心知识点、易错点或复习提示。\n4. 生成思维导图树，节点简洁。\n5. preferredFormat 表示当前用户偏好，若为 mindmap，则导图层级更细；若为 markdown，则正文更完整。\n6. 严格参考模板偏好，但不要编造 OCR 中不存在的知识点。\n7. "mindmapMermaid" 必须优先使用 Mermaid 的 "mindmap" 语法，整体视觉要横向扩散，避免自上而下的分层图。\n8. 如果确实无法使用 "mindmap" 语法，才允许使用 "flowchart LR" 作为降级方案；禁止输出 "graph TD"、"graph TB"、"flowchart TD"、"flowchart TB"。\n9. Mermaid 节点文案保持简洁，尽量减少交叉和拥挤。\n\n输出 JSON 结构必须是：\n{\n  "title": string,\n  "markdown": string,\n  "mindmapTree": { "title": string, "children": [] },\n  "mindmapMermaid": string\n}\n\n学科：${input.subjectName}\n笔记本：${input.notebookName}\n章节：${input.chapterTitle}\npreferredFormat：${input.outputFormat}\ntemplatePreset：${input.templatePreset}\ntemplateInstruction：${input.templateInstruction}\n\nOCR Markdown:\n${input.rawOcrMarkdown}`,
+      content: [
+        {
+          type: "image_url",
+          image_url: {
+            url: input.fileDataUrl,
+          },
+        },
+        {
+          type: "text",
+          text: `请直接阅读图片内容并一步完成提取和整理，生成适合 ${input.subjectName} 学科的学习笔记。不要先做 OCR 再总结，必须尽量覆盖图片中的全部有效内容。\n\n要求：\n1. 保留原始信息，不要胡编，不要只提标题。\n2. 尽量识别并保留正文、列表、表格、批注、公式、页眉页脚和手写内容。\n3. rawOcrMarkdown 字段写入尽可能完整的原始提取 Markdown；无法辨认处用 [unclear] 标记。\n4. markdown 字段输出整理后的学习笔记，自动修正明显断行和错位。\n5. preferredFormat 表示当前用户偏好，若为 mindmap，则导图层级更细；若为 markdown，则正文更完整。\n6. 严格参考模板偏好，但不要编造图片中不存在的知识点。\n7. mindmapMermaid 必须优先使用 Mermaid 的 mindmap 语法；如果确实无法使用，才允许使用 flowchart LR。\n8. Mermaid 节点只能使用纯文本，禁止 LaTeX、HTML 标签、Markdown 强调、表格语法和复杂公式块。公式请改写成普通文本，例如把 $S=ab$ 写成 S = ab。\n9. 禁止输出 graph TD、graph TB、flowchart TD、flowchart TB。\n10. 只输出 JSON，不要输出 Markdown 代码块说明，不要输出额外解释。\n\n输出 JSON 结构必须是：\n{\n  "title": string,\n  "rawOcrMarkdown": string,\n  "markdown": string,\n  "mindmapTree": { "title": string, "children": [] },\n  "mindmapMermaid": string\n}\n\n学科：${input.subjectName}\n笔记本：${input.notebookName}\n章节：${input.chapterTitle}\npreferredFormat：${input.outputFormat}\ntemplatePreset：${input.templatePreset}\ntemplateInstruction：${input.templateInstruction}`,
+        },
+      ],
     },
   ];
 
   let content = "";
   let lastError: Error | null = null;
 
-  for (const model of TEXT_MODEL_FALLBACKS) {
-    try {
-      const result = await siliconflowFetch({
-        model,
-        temperature: 0.2,
-        max_tokens: 5000,
-        messages,
-      });
+  try {
+    const result = await siliconflowFetch({
+      model: OCR_MODEL,
+      temperature: 0.2,
+      max_tokens: 8000,
+      messages,
+    });
 
-      content = result.choices?.[0]?.message?.content?.trim() || "";
-      console.info("[siliconflow] transform model selected", { model });
-      break;
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error("Unknown transform error");
-      console.warn("[siliconflow] transform model failed", {
-        model,
-        message: lastError.message,
-      });
+    content = extractAssistantText(result);
+    console.info("[siliconflow] vision model selected", { model: OCR_MODEL });
+  } catch (error) {
+    lastError = error instanceof Error ? error : new Error("Unknown vision transform error");
+    console.warn("[siliconflow] vision model failed", {
+      model: OCR_MODEL,
+      message: lastError.message,
+    });
 
-      if (!isRetryableSiliconflowError(error)) {
-        throw error;
-      }
+    if (!isRetryableSiliconflowError(error)) {
+      throw error;
     }
   }
 
   if (!content) {
-    throw lastError || new Error("SiliconFlow transform failed without a response.");
+    throw lastError || new Error("SiliconFlow vision transform failed without a response.");
   }
 
-  const parsed = JSON.parse(extractJsonBlock(content)) as {
-    title: string;
-    markdown: string;
-    mindmapTree: MindmapNode;
-    mindmapMermaid: string;
-  };
+  const parsed = parseStudyNotePayload(content);
 
-  return parsed;
+  return {
+    title: parsed.title,
+    rawOcrMarkdown: parsed.rawOcrMarkdown || parsed.markdown,
+    markdown: parsed.markdown,
+    mindmapTree: parsed.mindmapTree,
+    mindmapMermaid: parsed.mindmapTree
+      ? buildMindmapMermaidFromTree(parsed.mindmapTree)
+      : sanitizeMindmapMermaid(parsed.mindmapMermaid),
+  };
 }
