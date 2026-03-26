@@ -3,6 +3,8 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 
+import type { MindmapNode } from "@/lib/types";
+
 let mermaidLoader: Promise<typeof import("mermaid")> | undefined;
 
 function normalizeMindmapChart(chart: string) {
@@ -32,6 +34,46 @@ function normalizeMindmapChart(chart: string) {
   }
 
   return trimmed;
+}
+
+function sanitizeMermaidText(value: string) {
+  return value
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_, expr: string) => expr)
+    .replace(/\$([^$]+)\$/g, (_, expr: string) => expr)
+    .replace(/\\\((.*?)\\\)/g, (_, expr: string) => expr)
+    .replace(/\\\[(.*?)\\\]/g, (_, expr: string) => expr)
+    .replace(/\\(?:frac|sqrt|text|mathrm|mathbf|left|right|cdot|times|div|leq|geq|neq|approx|angle|triangle|parallel|perp|circ|sin|cos|tan|alpha|beta|gamma|theta|pi|lambda|mu|Delta|sum|int|pm|mp)\b/g, "")
+    .replace(/[{}]/g, "")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildMindmapMermaidFromTree(tree?: MindmapNode) {
+  if (!tree?.title) {
+    return "";
+  }
+
+  const lines = ["mindmap"];
+
+  function visit(node: MindmapNode, depth: number) {
+    const indent = "  ".repeat(depth);
+    const title = sanitizeMermaidText(node.title || "未命名节点") || "未命名节点";
+
+    if (depth === 1) {
+      lines.push(`${indent}root((${title}))`);
+    } else {
+      lines.push(`${indent}${title}`);
+    }
+
+    for (const child of node.children || []) {
+      visit(child, depth + 1);
+    }
+  }
+
+  visit(tree, 1);
+
+  return lines.join("\n");
 }
 
 async function getMermaid() {
@@ -76,11 +118,12 @@ async function getMermaid() {
   return mermaid;
 }
 
-export function MermaidPreview({ chart }: { chart?: string }) {
+export function MermaidPreview({ chart, tree }: { chart?: string; tree?: MindmapNode }) {
   const [svg, setSvg] = useState("");
   const [error, setError] = useState("");
   const reactId = useId();
   const diagramId = useMemo(() => `mermaid-${reactId.replace(/[:]/g, "")}`, [reactId]);
+  const fallbackChart = useMemo(() => buildMindmapMermaidFromTree(tree), [tree]);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +137,8 @@ export function MermaidPreview({ chart }: { chart?: string }) {
 
       try {
         const mermaid = await getMermaid();
-        const { svg: renderedSvg } = await mermaid.render(diagramId, normalizeMindmapChart(chart));
+        const sourceChart = chart?.trim() || fallbackChart;
+        const { svg: renderedSvg } = await mermaid.render(diagramId, normalizeMindmapChart(sourceChart));
 
         if (!cancelled) {
           setSvg(renderedSvg);
@@ -102,6 +146,18 @@ export function MermaidPreview({ chart }: { chart?: string }) {
         }
       } catch (renderError) {
         if (!cancelled) {
+          if (fallbackChart && fallbackChart !== chart?.trim()) {
+            try {
+              const mermaid = await getMermaid();
+              const { svg: renderedSvg } = await mermaid.render(`${diagramId}-fallback`, normalizeMindmapChart(fallbackChart));
+              setSvg(renderedSvg);
+              setError("");
+              return;
+            } catch {
+              // Fall through to user-facing error.
+            }
+          }
+
           setSvg("");
           setError(renderError instanceof Error ? renderError.message : "Mermaid render failed.");
         }
@@ -113,9 +169,9 @@ export function MermaidPreview({ chart }: { chart?: string }) {
     return () => {
       cancelled = true;
     };
-  }, [chart, diagramId]);
+  }, [chart, diagramId, fallbackChart]);
 
-  if (!chart?.trim()) {
+  if (!chart?.trim() && !fallbackChart) {
     return <p className="text-sm text-slate-500">这个章节还没有思维导图内容。</p>;
   }
 

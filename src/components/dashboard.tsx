@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import rehypeKatex from "rehype-katex";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import {
   BookOpenText,
   ChevronRight,
@@ -442,7 +444,7 @@ export function Dashboard({ initialData }: DashboardProps) {
         setAiDialogOpen(false);
         setSelectedFile(null);
         setExistingChapterId(result.chapter.id);
-        setFeedback("AI 已完成 OCR 和整理，当前章节内容已更新。");
+        setFeedback("AI 已完成图片理解与整理，当前章节内容已更新。");
       } catch (error) {
         setFeedback(error instanceof Error ? error.message : "生成失败");
       }
@@ -960,7 +962,7 @@ export function Dashboard({ initialData }: DashboardProps) {
                 />
 
                 <button type="button" onClick={handleGenerate} className="action-button" disabled={isPending}>
-                  <Sparkles className="h-4 w-4" /> {isPending ? "整理中..." : "开始 OCR 与整理"}
+                  <Sparkles className="h-4 w-4" /> {isPending ? "整理中..." : "开始识图整理"}
                 </button>
               </div>
             </div>
@@ -1131,12 +1133,12 @@ function ChapterPreview({
 
   if (mode === "mindmap") {
     if (viewMode === "preview") {
-      return <MermaidPreview chart={chapter.note.mindmapMermaid} />;
+      return <MermaidPreview chart={chapter.note.mindmapMermaid} tree={chapter.note.mindmapTree} />;
     }
 
     return (
       <div className="space-y-4">
-        <MermaidPreview chart={chapter.note.mindmapMermaid} />
+        <MermaidPreview chart={chapter.note.mindmapMermaid} tree={chapter.note.mindmapTree} />
         <textarea
           id="mindmap-editor"
           defaultValue={chapter.note.mindmapMermaid}
@@ -1150,7 +1152,7 @@ function ChapterPreview({
   if (viewMode === "preview") {
     return (
       <div className="max-w-none text-sm">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownComponents}>
           {chapter.note.markdown}
         </ReactMarkdown>
       </div>
